@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayPilot — agentic commerce operator for PayPal</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3;
+         max-width: 760px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 1.4em; }
+  h1 small { color: #8b949e; font-weight: normal; }
+  #log { border: 1px solid #30363d; border-radius: 8px; padding: 12px;
+         min-height: 300px; margin-bottom: 12px; }
+  .msg { margin: 8px 0; }
+  .user { color: #79c0ff; }
+  .agent { color: #e6edf3; }
+  .tools { color: #8b949e; font-size: 0.85em; margin: 4px 0 4px 16px;
+           white-space: pre-wrap; font-family: monospace; }
+  .err { color: #f85149; }
+  form { display: flex; gap: 8px; }
+  input { flex: 1; padding: 10px; border-radius: 6px;
+          border: 1px solid #30363d; background: #161b22; color: #e6edf3; }
+  button { padding: 10px 18px; border-radius: 6px; border: 0;
+           background: #1f6feb; color: white; cursor: pointer; }
+  #meta { color: #8b949e; font-size: 0.85em; margin-bottom: 12px; }
+  .hint { color: #8b949e; font-size: 0.85em; margin-top: 12px; }
+  code { background: #161b22; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>PayPilot <small>agentic commerce operator for PayPal</small></h1>
+<div id="meta">checking backend…</div>
+<div id="log"></div>
+<form id="f">
+  <input id="q" autocomplete="off"
+         placeholder='Try: Invoice Acme Corp $1,250 due in 30 days'>
+  <button type="submit">Send</button>
+</form>
+<div class="hint">
+  Try: <code>Who hasn't paid yet?</code> · <code>Refund the last payment from John</code> ·
+  <code>Give me an account summary</code>
+</div>
+<script>
+const log = document.getElementById('log');
+const meta = document.getElementById('meta');
+fetch('/api/health').then(r => r.json()).then(h => {
+  meta.textContent = h.ok
+    ? `backend: ${h.backend} · model: ${h.model}`
+    : `error: ${h.error}`;
+});
+function add(cls, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = document.getElementById('q');
+  const text = q.value.trim();
+  if (!text) return;
+  q.value = '';
+  add('user', '› ' + text);
+  add('agent', '…');
+  const r = await fetch('/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: text}),
+  });
+  const data = await r.json();
+  log.removeChild(log.lastChild);
+  if (data.error) { add('err', 'Error: ' + data.error); return; }
+  for (const tc of data.tool_calls || []) {
+    const res = tc.result && tc.result.error
+      ? 'ERROR: ' + tc.result.error
+      : JSON.stringify(tc.result);
+    add('tools', `⚙ ${tc.name}(${JSON.stringify(tc.arguments)}) → ${res}`);
+  }
+  add('agent', data.reply);
+});
+</script>
+</body>
+</html>
