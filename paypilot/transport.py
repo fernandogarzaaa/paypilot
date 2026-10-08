@@ -33,6 +33,7 @@ class Request:
     path: str  # e.g. "/v2/invoicing/invoices/INV2-123"
     params: dict = field(default_factory=dict)
     json_body: Optional[dict] = None
+    form_body: Optional[dict] = None  # application/x-www-form-urlencoded
     headers: dict = field(default_factory=dict)
 
 
@@ -63,7 +64,10 @@ class UrllibTransport(Transport):
         data = None
         headers = {"Accept": "application/json"}
         headers.update(req.headers)
-        if req.json_body is not None:
+        if req.form_body is not None:
+            data = urllib.parse.urlencode(req.form_body).encode("utf-8")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        elif req.json_body is not None:
             data = json.dumps(req.json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
         http_req = urllib.request.Request(url, data=data, headers=headers,
@@ -198,6 +202,14 @@ class MockPayPalTransport(Transport):
                 or decoded.endswith(":"):
             raise PayPalAPIError(401, "INVALID_CLIENT",
                                  "mock: empty client id or secret")
+        # PayPal's real token endpoint requires a form-encoded body; a JSON
+        # body gets HTTP 400 (this exact bug shipped once and the live
+        # sandbox caught it). The mock enforces the same contract.
+        grant = (req.form_body or {}).get("grant_type")
+        if grant != "client_credentials":
+            raise PayPalAPIError(400, "INVALID_REQUEST",
+                                 "mock: token request must be form-encoded "
+                                 "with grant_type=client_credentials")
         self._token_n += 1
         return Response(200, {
             "access_token": f"mock-access-token-{self._token_n}",

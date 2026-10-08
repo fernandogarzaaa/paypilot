@@ -11,16 +11,26 @@ def test_mock_oauth_issues_token():
     t = MockPayPalTransport()
     resp = t.request(Request("POST", "/v1/oauth2/token",
                              headers={"Authorization": "Basic dGVzdC1pZDp0ZXN0LXNlY3JldA=="},
-                             json_body={"grant_type": "client_credentials"}))
+                             form_body={"grant_type": "client_credentials"}))
     assert resp.status == 200
     assert resp.body["access_token"].startswith("mock-access-token-")
     assert resp.body["token_type"] == "Bearer"
 
 
+def test_mock_oauth_rejects_json_body_token_request():
+    # Regression: the real sandbox 400s a JSON token body; the mock must too.
+    t = MockPayPalTransport()
+    with pytest.raises(PayPalAPIError) as e:
+        t.request(Request("POST", "/v1/oauth2/token",
+                          headers={"Authorization": "Basic dGVzdC1pZDp0ZXN0LXNlY3JldA=="},
+                          json_body={"grant_type": "client_credentials"}))
+    assert e.value.status == 400
+
+
 def test_mock_oauth_rejects_missing_basic_auth():
     t = MockPayPalTransport()
     with pytest.raises(PayPalAPIError) as e:
-        t.request(Request("POST", "/v1/oauth2/token", json_body={}))
+        t.request(Request("POST", "/v1/oauth2/token", form_body={}))
     assert e.value.status == 401
 
 
@@ -28,7 +38,7 @@ def test_mock_records_requests():
     t = MockPayPalTransport()
     t.request(Request("POST", "/v1/oauth2/token",
                       headers={"Authorization": "Basic dGVzdC1pZDp0ZXN0LXNlY3JldA=="},
-                      json_body={"grant_type": "client_credentials"}))
+                      form_body={"grant_type": "client_credentials"}))
     assert len(t.requests) == 1
     assert t.requests[0].method == "POST"
     assert t.requests[0].path == "/v1/oauth2/token"
@@ -93,3 +103,41 @@ def test_urllib_transport_maps_connection_error(monkeypatch):
     with pytest.raises(PayPalAPIError) as e:
         t.request(Request("GET", "/v2/nope"))
     assert e.value.status == 0
+
+
+def test_urllib_transport_sends_form_encoded_body():
+    """Proves the actual bytes on the wire for form_body requests."""
+    import json as _json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    captured = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            captured["body"] = self.rfile.read(length)
+            captured["content_type"] = self.headers.get("Content-Type")
+            payload = _json.dumps({"access_token": "x", "expires_in": 300}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        t = UrllibTransport(f"http://127.0.0.1:{server.server_port}")
+        resp = t.request(Request(
+            "POST", "/v1/oauth2/token",
+            headers={"Authorization": "Basic dGVzdA=="},
+            form_body={"grant_type": "client_credentials"}))
+        assert resp.status == 200
+        assert captured["body"] == b"grant_type=client_credentials"
+        assert captured["content_type"] == "application/x-www-form-urlencoded"
+    finally:
+        server.shutdown()

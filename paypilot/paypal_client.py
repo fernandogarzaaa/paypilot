@@ -15,6 +15,7 @@ import base64
 import datetime
 import os
 import time
+import urllib.parse
 from typing import Any, Optional
 
 from .errors import ConfigurationError, PayPalAPIError
@@ -99,7 +100,9 @@ class PayPalClient:
         resp = self.transport.request(Request(
             "POST", "/v1/oauth2/token",
             headers={"Authorization": f"Basic {basic}"},
-            json_body={"grant_type": "client_credentials"}))
+            # PayPal requires application/x-www-form-urlencoded here; a JSON
+            # body is rejected with HTTP 400.
+            form_body={"grant_type": "client_credentials"}))
         body = resp.body or {}
         self._token = body.get("access_token", "")
         expires_in = int(body.get("expires_in", 300))
@@ -160,6 +163,13 @@ class PayPalClient:
                          "surname": surname}}}] ,
             "items": payload_items,
         })
+        if "id" not in body and body.get("href"):
+            # PayPal may answer 201 with only a self link
+            # ({"rel": "self", "href": ".../invoices/<id>", "method": "GET"});
+            # follow it to fetch the created invoice.
+            href = body["href"]
+            path = urllib.parse.urlparse(href).path or href
+            body = self._call("GET", path)
         return {"invoice_id": body.get("id", ""),
                 "status": body.get("status", ""),
                 "currency": currency}
@@ -182,12 +192,15 @@ class PayPalClient:
         recipients = body.get("primary_recipients") or []
         billing = (recipients[0].get("billing_info")
                    if recipients else {}) or {}
-        amount = (body.get("amount") or {}).get("summary", {}) or {}
+        amount = body.get("amount") or {}
+        # PayPal returns the total as amount.value; older shapes nested it
+        # under amount.summary.total. Accept both.
+        total = amount.get("value") or (amount.get("summary") or {}).get("total", "")
         return {
             "invoice_id": body.get("id", ""),
             "status": body.get("status", ""),
             "currency": (body.get("detail") or {}).get("currency_code", ""),
-            "total": amount.get("total", ""),
+            "total": total,
             "recipient_email": billing.get("email_address", ""),
             "due_date": body.get("due_date", ""),
         }
@@ -207,8 +220,11 @@ class PayPalClient:
         return {"invoice_id": invoice_id, "reminded": True}
 
     def cancel_invoice(self, invoice_id: str) -> dict:
+        # PayPal's sandbox answers 415 to a bodiless POST here; an empty
+        # JSON object succeeds (204).
         body = self._call("POST",
-                          f"/v2/invoicing/invoices/{invoice_id}/cancel")
+                          f"/v2/invoicing/invoices/{invoice_id}/cancel",
+                          json_body={})
         return {"invoice_id": invoice_id,
                 "status": (body or {}).get("status", "CANCELLED")}
 
