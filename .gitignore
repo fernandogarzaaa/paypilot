@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+build/
+dist/
+.coverage
+htmlcov/
+
+# Local secrets (keep .env.example tracked)
+.env
+.env.*
+!.env.example
