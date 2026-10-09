@@ -1,5 +1,5 @@
 mcp>=2.3.0,<3
-fastapi>=0.115
+fastapi>=0.142.2
 uvicorn>=0.30
 httpx>=0.28.1
-pytest>=8
+pytest>=9.1.1
