@@ -1,0 +1,23 @@
+# Render blueprint for the PayPilot hackathon demo.
+# Deploy: connect this repo in the Render dashboard (Blueprint).
+# Then set PAYPILOT_MODEL_BASE_URL / PAYPILOT_MODEL_API_KEY /
+# PAYPILOT_MODEL_ID in the dashboard (any OpenAI-compatible endpoint).
+# The demo runs against the in-memory mock PayPal backend
+# (PAYPILOT_TRANSPORT=mock); /api/health discloses this honestly.
+services:
+  - type: web
+    name: paypilot-demo
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn paypilot.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PAYPILOT_TRANSPORT
+        value: mock
+      - key: PAYPILOT_MODEL_BASE_URL
+        sync: false
+      - key: PAYPILOT_MODEL_API_KEY
+        sync: false
+      - key: PAYPILOT_MODEL_ID
+        sync: false
