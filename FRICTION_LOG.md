@@ -31,3 +31,21 @@ SENT). Fine at hackathon scale; worth knowing before building dashboards.
 Same environment quirk as the previous build: the `mcp>=2` vendored
 httpx copy crashes on `no_proxy` entries like `*[::1]`. Reused the
 `netenv.sanitize_proxy_env()` approach so localhost MCP tests run.
+
+## 5. Production-readiness dogfood (2026-10-11): real flow works, two gaps fixed
+Drove the full commerce flow over real Streamable-HTTP MCP (mock backend)
+with the official SDK client: invoice_create -> send -> status -> remind ->
+list -> payment_search -> refund -> account_summary, all green. Web demo
+honestly reports backend/model state via /api/health. Live sandbox smoke
+test still needs real sandbox credentials (PAYPAL_CLIENT_ID/SECRET) that
+are not available in this environment; README documents the setup.
+
+Fixed on branch fix/production-readiness:
+1. Garbage numeric input (unit_price/quantity/amount like "abc") raised a
+   raw ValueError that bypassed the MCP/web {"error": ...} envelope,
+   surfacing as an unstructured internal error. Now validated in
+   paypal_client._money() -> ConfigurationError (a PayPilotError).
+2. Mock never stored due_date, so invoice_status always showed "" while
+   the live API returns a concrete date. Mock now derives it from the
+   payment_term (NET_n -> today+n, DUE_ON_RECEIPT -> today, explicit
+   DUE_ON_DATE_SPECIFIED kept). Tests added for both.

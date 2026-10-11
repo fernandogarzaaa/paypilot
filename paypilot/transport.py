@@ -14,6 +14,7 @@ the exact endpoint, method, and payload the client produced.
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import random
 import string
@@ -103,6 +104,29 @@ def _rand_invoice_id() -> str:
 
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _mock_due_date(payment_term: dict) -> str:
+    """Mirror what the real Invoices API returns as due_date.
+
+    create_invoice sends term_type NET_<n> / DUE_ON_RECEIPT / an explicit
+    DUE_ON_DATE_SPECIFIED date; the live API echoes a concrete due date.
+    The mock must too, otherwise invoice_status hides the terms the
+    caller asked for.
+    """
+    term_type = (payment_term or {}).get("term_type", "")
+    if term_type == "DUE_ON_DATE_SPECIFIED":
+        return (payment_term or {}).get("due_date", "")
+    today = datetime.date.today()
+    if term_type == "DUE_ON_RECEIPT":
+        return today.isoformat()
+    if term_type.startswith("NET_"):
+        try:
+            days = int(term_type[4:])
+        except ValueError:
+            return ""
+        return (today + datetime.timedelta(days=days)).isoformat()
+    return ""
 
 
 class MockPayPalTransport(Transport):
@@ -246,6 +270,8 @@ class MockPayPalTransport(Transport):
             "recipient_name": full_name,
             "note": body.get("detail", {}).get("note", ""),
             "created": _now_iso(),
+            "due_date": _mock_due_date(
+                body.get("detail", {}).get("payment_term", {})),
             "raw": body,
         }
         self.invoices[inv_id] = inv

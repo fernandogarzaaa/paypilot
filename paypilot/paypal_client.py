@@ -37,6 +37,24 @@ def _bearer(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _money(value: Any, what: str) -> float:
+    """Coerce a money string/number, raising a PayPilot error on junk.
+
+    float() raising a raw ValueError would bypass the MCP server's and
+    web demo's PayPilotError error envelopes, surfacing as an unstructured
+    internal error instead of the documented {"error": ...} reply.
+    """
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        raise ConfigurationError(
+            f"{what} must be a numeric amount, got {value!r}.")
+    if amount < 0:
+        raise ConfigurationError(
+            f"{what} must not be negative, got {value!r}.")
+    return amount
+
+
 class PayPalClient:
     """Thin, honest wrapper over the PayPal REST API."""
 
@@ -135,6 +153,16 @@ class PayPalClient:
         payload_items = []
         for it in items:
             qty = it.get("quantity", 1)
+            try:
+                qty_f = float(qty)
+            except (TypeError, ValueError):
+                raise ConfigurationError(
+                    f"item {it.get('name', '?')!r} needs a numeric "
+                    f"quantity, got {qty!r}.")
+            if qty_f <= 0:
+                raise ConfigurationError(
+                    f"item {it.get('name', '?')!r} needs a positive "
+                    f"quantity, got {qty!r}.")
             price = it.get("unit_price")
             if price is None:
                 raise ConfigurationError(
@@ -143,7 +171,7 @@ class PayPalClient:
                 "name": str(it.get("name", "Item")),
                 "quantity": str(qty),
                 "unit_amount": {"currency_code": currency,
-                                "value": f"{float(price):.2f}"},
+                                "value": f"{_money(price, 'unit_price'):.2f}"},
             })
         detail: dict[str, Any] = {"currency_code": currency}
         if note:
@@ -273,7 +301,7 @@ class PayPalClient:
         payload: dict[str, Any] = {}
         if amount is not None:
             payload["amount"] = {"currency_code": currency,
-                                 "value": f"{float(amount):.2f}"}
+                                 "value": f"{_money(amount, 'amount'):.2f}"}
         if note:
             payload["note_to_payer"] = note
         body = self._call(

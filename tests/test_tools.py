@@ -104,3 +104,44 @@ def test_tool_specs_cover_all_tools():
     for spec in tools.TOOL_SPECS:
         assert spec["description"], spec["name"]
         assert spec["parameters"]["type"] == "object"
+
+
+def test_garbage_money_raises_paypilot_error(client):
+    """Bad numeric input must surface as a PayPilotError (so the MCP
+    server and web demo return their documented {"error": ...} envelope),
+    not as a raw ValueError."""
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "a@b.co",
+            "items": [{"name": "x", "quantity": 1,
+                       "unit_price": "not-a-number"}]})
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "a@b.co",
+            "items": [{"name": "x", "quantity": "many", "unit_price": 5}]})
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "refund_payment",
+                           {"capture_id": "CAP-9RU12345AB",
+                            "amount": "not-a-number"})
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "refund_payment",
+                           {"capture_id": "CAP-9RU12345AB",
+                            "amount": "-5"})
+
+
+def test_invoice_status_reports_due_date(client):
+    """The mock must mirror the live API: NET_30 terms produce a real
+    due date on invoice_status."""
+    import datetime
+
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "due@example.com",
+        "items": [{"name": "Work", "quantity": 1, "unit_price": 100}],
+        "due_days": 30})
+    status = tools.execute_tool(client, "invoice_status",
+                                {"invoice_id": created["invoice_id"]})
+    expected = (datetime.date.today()
+                + datetime.timedelta(days=30)).isoformat()
+    assert status["due_date"] == expected
