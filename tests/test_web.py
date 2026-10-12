@@ -51,3 +51,27 @@ def test_chat_503_when_model_unconfigured(web_client, monkeypatch):
     r = web_client.post("/api/chat", json={"message": "hi"})
     assert r.status_code == 503
     assert "no model" in r.json()["error"]
+
+
+@pytest.mark.parametrize("message", ["", "   ", "x" * 2001])
+def test_chat_rejects_blank_or_oversized_message(web_client, monkeypatch,
+                                                 message):
+    called = []
+    monkeypatch.setattr(agent_module, "build_model",
+                        lambda: called.append(1))
+    r = web_client.post("/api/chat", json={"message": message})
+    assert r.status_code == 422
+    assert r.json()["error"].startswith("message")
+    assert called == []  # rejected before any model is built
+
+
+def test_validation_errors_use_error_shape(web_client):
+    r = web_client.post("/api/confirm", json={})
+    assert r.status_code == 422
+    assert "action_id" in r.json()["error"]
+
+
+def test_index_has_accessible_input_and_live_log(web_client):
+    html = web_client.get("/").text
+    assert '<label for="q"' in html
+    assert 'role="log"' in html
