@@ -51,6 +51,10 @@ def main() -> None:
         f"PAYPILOT_MODEL_API_KEY={key}\n"
         "PAYPILOT_MODEL_ID=deepseek/deepseek-chat-v3-0324\n"
         "PAYPILOT_WEB_PORT=8931\n"
+        # Public mock-only demo: explicit opt-in to an unauthenticated public
+        # bind. Real PayPal backends need PAYPILOT_API_KEY instead.
+        "PAYPILOT_WEB_HOST=0.0.0.0\n"
+        "PAYPILOT_ALLOW_UNAUTHENTICATED_DEMO=1\n"
     )
     with open(ENV_PATH, "w") as f:
         f.write(env)
