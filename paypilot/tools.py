@@ -130,6 +130,11 @@ TOOL_SPECS: list[dict] = [
 
 _UNPAID = {"SENT"}
 
+# Tools that move money or send something to a customer. The web UI never
+# runs these straight from the model: it holds them as pending actions that
+# a human must confirm (POST /api/confirm).
+CONFIRM_REQUIRED: frozenset[str] = frozenset({"refund_payment", "invoice_send"})
+
 
 def _require(args: dict, name: str, tool: str) -> Any:
     if name not in args or args[name] in (None, ""):
