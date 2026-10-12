@@ -64,11 +64,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   q.value = '';
   add('user', '› ' + text);
   add('agent', '…');
-  const r = await fetch('/api/chat', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({message: text}),
-  });
+  const r = await post('/api/chat', {message: text});
   const data = await r.json();
   log.removeChild(log.lastChild);
   if (data.error) { add('err', 'Error: ' + data.error); return; }
@@ -79,7 +75,46 @@ document.getElementById('f').addEventListener('submit', async (e) => {
     add('tools', `⚙ ${tc.name}(${JSON.stringify(tc.arguments)}) → ${res}`);
   }
   add('agent', data.reply);
+  for (const p of data.pending_actions || []) pendingCard(p);
 });
+// Money-moving tools (refunds, sending invoices) are held by the server
+// until a human clicks Confirm here.
+function pendingCard(p) {
+  const d = document.createElement('div');
+  d.className = 'msg tools';
+  d.textContent = `⏸ ${p.name}(${JSON.stringify(p.arguments)}) needs your confirmation `;
+  const ok = document.createElement('button');
+  ok.textContent = 'Confirm';
+  const no = document.createElement('button');
+  no.textContent = 'Cancel';
+  const done = async (path, label) => {
+    ok.disabled = no.disabled = true;
+    const r = await post(path, {action_id: p.action_id});
+    const res = await r.json();
+    add(res.error ? 'err' : 'tools',
+        res.error ? 'Error: ' + res.error : `${label} ${p.name} → ${JSON.stringify(res.result || res)}`);
+  };
+  ok.onclick = () => done('/api/confirm', '✔ executed');
+  no.onclick = () => done('/api/cancel', '✖ cancelled');
+  d.append(ok, ' ', no);
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+// Optional API key (PAYPILOT_API_KEY on the server), kept in this browser only.
+async function post(path, body) {
+  const send = () => fetch(path, {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'},
+      localStorage.paypilotKey ? {'Authorization': 'Bearer ' + localStorage.paypilotKey} : {}),
+    body: JSON.stringify(body),
+  });
+  let r = await send();
+  if (r.status === 401) {
+    const k = prompt('This PayPilot server needs an API key:');
+    if (k) { localStorage.paypilotKey = k.trim(); r = await send(); }
+  }
+  return r;
+}
 </script>
 </body>
 </html>

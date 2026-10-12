@@ -20,7 +20,7 @@ import json
 import os
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from . import tools as tool_module
 from .errors import ConfigurationError, PayPilotError
@@ -158,8 +158,16 @@ class AgentResult:
 
 
 def run_agent(client: PayPalClient, model: ModelClient,
-              user_message: str, max_turns: int = 10) -> AgentResult:
-    """Run the agent loop. Returns the final reply and every tool call made."""
+              user_message: str, max_turns: int = 10,
+              gate: Optional[Callable[[str, dict], Optional[dict]]] = None,
+              ) -> AgentResult:
+    """Run the agent loop. Returns the final reply and every tool call made.
+
+    gate, if given, is consulted before each tool call. When it returns a
+    dict, that dict is handed to the model as the tool result and the tool
+    is NOT executed (used by the web UI to hold money-moving tools for an
+    explicit human confirmation).
+    """
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_message},
@@ -182,6 +190,17 @@ def run_agent(client: PayPalClient, model: ModelClient,
                 for tc in resp.tool_calls],
         })
         for tc in resp.tool_calls:
+            held = gate(tc.name, tc.arguments) if gate else None
+            if held is not None:
+                record = {"name": tc.name, "arguments": tc.arguments,
+                          "result": held}
+                calls.append(record)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(held),
+                })
+                continue
             try:
                 result = tool_module.execute_tool(client, tc.name,
                                                  tc.arguments)

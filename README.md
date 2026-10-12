@@ -85,6 +85,13 @@ export PAYPILOT_MODEL_ID="model-id"
 Without it, the agent raises `ConfigurationError` naming the missing
 variables instead of pretending to work.
 
+## Security model
+
+- **Human confirmation for money-moving tools.** In the web UI, `refund_payment` and `invoice_send` are never executed straight from the model. The `/api/chat` response lists them under `pending_actions`; nothing happens until a person clicks *Confirm* (`POST /api/confirm {"action_id": ...}`) or *Cancel* (`POST /api/cancel`). Pending actions are single-use and expire after 10 minutes.
+- **API key.** Set `PAYPILOT_API_KEY` to require `Authorization: Bearer <key>` (or `X-API-Key`) on `/api/chat`, `/api/confirm` and `/api/cancel`. The web page prompts for it once and keeps it in the browser's localStorage.
+- **Real PayPal needs a key.** Without `PAYPILOT_API_KEY`, the web endpoints only run against the in-memory mock (`PAYPILOT_TRANSPORT=mock`); a sandbox or live backend returns 503.
+- **Safe binds.** `python -m paypilot.web` and `python -m paypilot.mcp_server` default to `127.0.0.1`. The web server refuses a non-loopback `--host` without `PAYPILOT_API_KEY`, except for an explicit mock-only public demo (`PAYPILOT_ALLOW_UNAUTHENTICATED_DEMO=1` with `PAYPILOT_TRANSPORT=mock`, which `deploy/write_env.py` sets for the hosted demo). The MCP server has no auth of its own, so it refuses non-loopback binds unless `PAYPILOT_MCP_ALLOW_REMOTE=1` (only behind an authenticating proxy). MCP clients are expected to show their own per-tool approval prompt before calling `refund_payment`.
+
 ## Project layout
 
 ```

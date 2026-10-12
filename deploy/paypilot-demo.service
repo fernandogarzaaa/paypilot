@@ -6,7 +6,10 @@ After=network.target
 User=ec2-user
 WorkingDirectory=/home/ec2-user/paypilot-demo
 EnvironmentFile=/home/ec2-user/paypilot-demo.env
-ExecStart=/home/ec2-user/paypilot-demo/.venv/bin/uvicorn paypilot.web:app --host 0.0.0.0 --port 8931
+# Host/port come from the env file (PAYPILOT_WEB_HOST, default 127.0.0.1).
+# paypilot.web refuses a public bind without PAYPILOT_API_KEY unless the
+# mock-only demo opt-in PAYPILOT_ALLOW_UNAUTHENTICATED_DEMO=1 is set.
+ExecStart=/home/ec2-user/paypilot-demo/.venv/bin/python -m paypilot.web
 Restart=on-failure
 RestartSec=5
 

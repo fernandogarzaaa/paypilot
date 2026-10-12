@@ -10,6 +10,7 @@ Run:  python -m paypilot.mcp_server [--host 127.0.0.1] [--port 8899]
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 
@@ -108,6 +109,25 @@ def account_summary() -> str:
     return _run("account_summary", {})
 
 
+def check_bind(host: str) -> None:
+    """The MCP endpoint has no authentication of its own, and it exposes
+    money-moving tools. Refuse non-loopback binds unless explicitly allowed
+    (PAYPILOT_MCP_ALLOW_REMOTE=1, e.g. behind an authenticating proxy)."""
+    if host == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        pass
+    if os.environ.get("PAYPILOT_MCP_ALLOW_REMOTE") == "1":
+        return
+    raise SystemExit(
+        f"Refusing to bind the unauthenticated MCP server to {host}. Bind "
+        "127.0.0.1, or set PAYPILOT_MCP_ALLOW_REMOTE=1 if an authenticating "
+        "proxy sits in front of it.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="PayPilot MCP server")
     parser.add_argument("--host", default=os.environ.get("PAYPILOT_MCP_HOST",
@@ -116,6 +136,7 @@ def main() -> None:
                         default=int(os.environ.get("PAYPILOT_MCP_PORT",
                                                    "8899")))
     args = parser.parse_args()
+    check_bind(args.host)
     backend = PayPalClient.from_env().backend
     print(f"PayPilot MCP server {SERVER_VERSION} on "
           f"http://{args.host}:{args.port}/mcp "
