@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Web UI no longer freezes on a network failure or a non-JSON error page: errors are shown in the conversation, the "…" placeholder is always removed, and Send is disabled while a request is in flight (no double submits).
+- `/api/chat` rejects blank messages and messages over 2,000 characters with a 422 before any model call; validation errors now use the same `{"error": ...}` shape as other API errors, so the UI shows them.
+- Accessibility: the message box has a label, the conversation is an ARIA live log, the status line is a live status, visible focus rings, and the log scrolls inside its box instead of growing the page. It also has an empty state.
+
 ### Security
 
 - Web UI: `refund_payment` and `invoice_send` are held as pending actions and only run after an explicit human confirm (`/api/confirm`, `/api/cancel`).

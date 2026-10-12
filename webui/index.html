@@ -11,7 +11,10 @@
   h1 { font-size: 1.4em; }
   h1 small { color: #8b949e; font-weight: normal; }
   #log { border: 1px solid #30363d; border-radius: 8px; padding: 12px;
-         min-height: 300px; margin-bottom: 12px; }
+         min-height: 300px; max-height: 65vh; overflow-y: auto;
+         margin-bottom: 12px; }
+  #log:empty::before { content: "No messages yet. Ask PayPilot to invoice, find or refund a payment.";
+                       color: #8b949e; }
   .msg { margin: 8px 0; }
   .user { color: #79c0ff; }
   .agent { color: #e6edf3; }
@@ -23,6 +26,10 @@
           border: 1px solid #30363d; background: #161b22; color: #e6edf3; }
   button { padding: 10px 18px; border-radius: 6px; border: 0;
            background: #1f6feb; color: white; cursor: pointer; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  input:focus-visible, button:focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+             clip: rect(0 0 0 0); white-space: nowrap; }
   #meta { color: #8b949e; font-size: 0.85em; margin-bottom: 12px; }
   .hint { color: #8b949e; font-size: 0.85em; margin-top: 12px; }
   code { background: #161b22; padding: 1px 5px; border-radius: 4px; }
@@ -30,12 +37,13 @@
 </head>
 <body>
 <h1>PayPilot <small>agentic commerce operator for PayPal</small></h1>
-<div id="meta">checking backend…</div>
-<div id="log"></div>
+<div id="meta" role="status">checking backend…</div>
+<div id="log" role="log" aria-live="polite" aria-label="Conversation"></div>
 <form id="f">
-  <input id="q" autocomplete="off"
+  <label for="q" class="sr-only">Message to PayPilot</label>
+  <input id="q" autocomplete="off" maxlength="2000"
          placeholder='Try: Invoice Acme Corp $1,250 due in 30 days'>
-  <button type="submit">Send</button>
+  <button type="submit" id="send">Send</button>
 </form>
 <div class="hint">
   Try: <code>Who hasn't paid yet?</code> · <code>Refund the last payment from John</code> ·
@@ -48,25 +56,44 @@ fetch('/api/health').then(r => r.json()).then(h => {
   meta.textContent = h.ok
     ? `backend: ${h.backend} · model: ${h.model}`
     : `error: ${h.error}`;
-});
+}).catch(() => { meta.textContent = 'backend unreachable - is the PayPilot server running?'; });
+// Parse a response as JSON; a proxy error page or dropped connection becomes
+// a readable {error} instead of an unhandled rejection that freezes the UI.
+async function readJson(r) {
+  let body;
+  try { body = await r.json(); }
+  catch { return {error: `server returned HTTP ${r.status}`}; }
+  if (!r.ok && !body.error) body.error = `server returned HTTP ${r.status}`;
+  return body;
+}
 function add(cls, text) {
   const d = document.createElement('div');
   d.className = 'msg ' + cls;
   d.textContent = text;
   log.appendChild(d);
   log.scrollTop = log.scrollHeight;
+  return d;
 }
 document.getElementById('f').addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = document.getElementById('q');
   const text = q.value.trim();
   if (!text) return;
+  const send = document.getElementById('send');
+  send.disabled = true;  // no double-submits while the agent is working
   q.value = '';
   add('user', '› ' + text);
-  add('agent', '…');
-  const r = await post('/api/chat', {message: text});
-  const data = await r.json();
-  log.removeChild(log.lastChild);
+  const thinking = add('agent', '…');
+  let data;
+  try {
+    data = await readJson(await post('/api/chat', {message: text}));
+  } catch {
+    data = {error: 'network error - could not reach the PayPilot server'};
+  } finally {
+    thinking.remove();
+    send.disabled = false;
+    q.focus();
+  }
   if (data.error) { add('err', 'Error: ' + data.error); return; }
   for (const tc of data.tool_calls || []) {
     const res = tc.result && tc.result.error
@@ -89,8 +116,9 @@ function pendingCard(p) {
   no.textContent = 'Cancel';
   const done = async (path, label) => {
     ok.disabled = no.disabled = true;
-    const r = await post(path, {action_id: p.action_id});
-    const res = await r.json();
+    let res;
+    try { res = await readJson(await post(path, {action_id: p.action_id})); }
+    catch { res = {error: 'network error - action state unknown, check PayPal before retrying'}; }
     add(res.error ? 'err' : 'tools',
         res.error ? 'Error: ' + res.error : `${label} ${p.name} → ${JSON.stringify(res.result || res)}`);
   };

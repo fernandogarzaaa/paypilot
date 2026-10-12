@@ -31,8 +31,9 @@ import time
 from dataclasses import dataclass
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from . import agent as agent_module
 from . import tools as tool_module
@@ -41,6 +42,17 @@ from .paypal_client import PayPalClient
 
 app = FastAPI(title="PayPilot demo")
 
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(_request: Request, exc: RequestValidationError):
+    """Return validation failures in the same {"error": ...} shape as every
+    other API error, so the web UI can show them instead of 'undefined'."""
+    first = exc.errors()[0] if exc.errors() else {}
+    field = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
+    msg = first.get("msg", "invalid request")
+    return JSONResponse({"error": f"{field}: {msg}" if field else msg},
+                        status_code=422)
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _INDEX = os.path.join(_HERE, "..", "webui", "index.html")
 
@@ -48,12 +60,24 @@ PENDING_TTL_S = 600
 PENDING_MAX = 200
 
 
+MAX_MESSAGE_CHARS = 2000
+
+
 class ChatRequest(BaseModel):
-    message: str
+    # Bounded so one request can't push an arbitrarily large prompt (and LLM
+    # bill) through the agent; blank messages are rejected before any call.
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("message must not be blank")
+        return v
 
 
 class ActionRequest(BaseModel):
-    action_id: str
+    action_id: str = Field(min_length=1, max_length=64)
 
 
 @dataclass
