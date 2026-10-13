@@ -7,6 +7,7 @@ execute_tool() dispatches to the PayPalClient with argument validation.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .errors import PayPalAPIError, ToolError
@@ -114,6 +115,10 @@ TOOL_SPECS: list[dict] = [
             "properties": {
                 "capture_id": {"type": "string"},
                 "amount": {"type": "string", "default": ""},
+                "currency": {"type": "string", "default": "",
+                             "description": "Currency of the original "
+                             "payment; looked up from recent payments "
+                             "when omitted."},
                 "note": {"type": "string", "default": ""},
             },
             "required": ["capture_id"],
@@ -142,6 +147,51 @@ def _require(args: dict, name: str, tool: str) -> Any:
     return args[name]
 
 
+def _int_arg(args: dict, name: str, tool: str, default: int,
+             lo: int, hi: int) -> int:
+    """Coerce an integer tool argument, raising ToolError on junk.
+
+    A bare int() on model-supplied input ("thirty", "", 1.5e9) raised a raw
+    ValueError that escaped the agent loop's PayPilotError handling and
+    turned one bad tool call into an HTTP 500 for the whole chat turn.
+    """
+    raw = args.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        value = int(raw)
+        if isinstance(raw, float) and raw != value:
+            raise ValueError
+    except (TypeError, ValueError, OverflowError):
+        raise ToolError(f"{tool}: '{name}' must be an integer, got {raw!r}.")
+    if not lo <= value <= hi:
+        raise ToolError(f"{tool}: '{name}' must be between {lo} and {hi}, "
+                        f"got {value}.")
+    return value
+
+
+def _sum_by_currency(rows: list[dict], key: str, fallback: str) -> dict:
+    """Exact (Decimal) totals per currency, rounded to cents."""
+    totals: dict[str, Decimal] = {}
+    for r in rows:
+        cur = str(r.get("currency") or fallback)
+        try:
+            amt = Decimal(str(r.get(key) or 0))
+        except InvalidOperation:
+            amt = Decimal(0)
+        totals[cur] = totals.get(cur, Decimal(0)) + amt
+    return {c: float(v.quantize(Decimal("0.01"))) for c, v in totals.items()}
+
+
+def _capture_currency(client: PayPalClient, capture_id: str) -> str | None:
+    """Currency of a recent capture, so a partial refund is not sent as USD
+    against a EUR/GBP/... payment (PayPal rejects the currency mismatch)."""
+    for txn in client.search_transactions(days_back=180):
+        if capture_id in (txn.get("capture_id"), txn.get("transaction_id")):
+            return txn.get("currency") or None
+    return None
+
+
 def execute_tool(client: PayPalClient, name: str,
                  arguments: dict) -> dict:
     """Run one tool against the PayPal client. Returns a JSON dict.
@@ -156,7 +206,7 @@ def execute_tool(client: PayPalClient, name: str,
             to_name=str(args.get("recipient_name", "")),
             items=_require(args, "items", name),
             currency=str(args.get("currency") or "USD"),
-            due_days=int(args.get("due_days") or 30),
+            due_days=_int_arg(args, "due_days", name, 30, 0, 365),
             note=str(args.get("note") or ""))
     if name == "invoice_send":
         return client.send_invoice(_require(args, "invoice_id", name))
@@ -165,7 +215,7 @@ def execute_tool(client: PayPalClient, name: str,
                                      note=str(args.get("note") or ""))
     if name == "invoice_list":
         status = str(args.get("status") or "").upper()
-        data = client.list_invoices(limit=int(args.get("limit") or 20))
+        data = client.list_invoices(limit=_int_arg(args, "limit", name, 20, 1, 100))
         invs = data["invoices"]
         if status == "UNPAID":
             invs = [i for i in invs if i["status"] in _UNPAID]
@@ -176,14 +226,19 @@ def execute_tool(client: PayPalClient, name: str,
         return client.get_invoice(_require(args, "invoice_id", name))
     if name == "payment_search":
         txns = client.search_transactions(
-            days_back=int(args.get("days_back") or 30),
+            days_back=_int_arg(args, "days_back", name, 30, 1, 1095),
             query=str(args.get("query") or ""))
         return {"payments": txns, "count": len(txns)}
     if name == "refund_payment":
         amount = str(args.get("amount") or "").strip() or None
+        capture_id = _require(args, "capture_id", name)
+        currency = str(args.get("currency") or "").strip().upper()
+        if amount is not None and not currency:
+            currency = _capture_currency(client, capture_id) or "USD"
         return client.refund_capture(
-            _require(args, "capture_id", name),
+            capture_id,
             amount=amount,
+            currency=currency or "USD",
             note=str(args.get("note") or ""))
     if name == "account_summary":
         data = client.list_invoices(limit=100)
@@ -191,25 +246,39 @@ def execute_tool(client: PayPalClient, name: str,
         outstanding = [i for i in invs if i["status"] in _UNPAID]
         paid = [i for i in invs if i["status"] == "PAID"]
 
-        def _total(rows):
-            return round(sum(float(r["total"] or 0) for r in rows), 2)
-
         txns = client.search_transactions(days_back=30)
         received = [t for t in txns if t["status"] == "COMPLETED"]
         currency = "USD"
-        for row in outstanding + paid:
+        for row in outstanding + paid + received:
             if row.get("currency"):
                 currency = row["currency"]
                 break
-        return {
+        out_by = _sum_by_currency(outstanding, "total", currency)
+        paid_by = _sum_by_currency(paid, "total", currency)
+        recv_by = _sum_by_currency(received, "amount", currency)
+        currencies = sorted(set(out_by) | set(paid_by) | set(recv_by))
+        summary: dict = {
             "outstanding_invoices": len(outstanding),
-            "outstanding_total": _total(outstanding),
             "paid_invoices": len(paid),
-            "paid_total": _total(paid),
             "payments_received_30d": len(received),
-            "payments_total_30d": _total(
-                [{"total": t["amount"]} for t in received]),
-            "currency": currency,
         }
+        if len(currencies) <= 1:
+            summary.update({
+                "outstanding_total": out_by.get(currency, 0.0),
+                "paid_total": paid_by.get(currency, 0.0),
+                "payments_total_30d": recv_by.get(currency, 0.0),
+                "currency": currency,
+            })
+        else:
+            # Never add EUR to USD: report one total per currency instead.
+            summary.update({
+                "currency": "MIXED",
+                "totals_by_currency": {
+                    c: {"outstanding_total": out_by.get(c, 0.0),
+                        "paid_total": paid_by.get(c, 0.0),
+                        "payments_total_30d": recv_by.get(c, 0.0)}
+                    for c in currencies},
+            })
+        return summary
     raise ToolError(f"Unknown tool: {name!r}. Available: "
                     + ", ".join(t["name"] for t in TOOL_SPECS))

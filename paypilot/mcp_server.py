@@ -97,10 +97,12 @@ def payment_search(query: str = "", days_back: int = 30) -> str:
 
 @mcp.tool()
 def refund_payment(capture_id: str, amount: str = "",
-                   note: str = "") -> str:
-    """Refund a captured payment (full refund when amount is omitted)."""
+                   note: str = "", currency: str = "") -> str:
+    """Refund a captured payment (full refund when amount is omitted).
+    currency defaults to the original payment's currency."""
     return _run("refund_payment", {"capture_id": capture_id,
-                                   "amount": amount, "note": note})
+                                   "amount": amount, "note": note,
+                                   "currency": currency})
 
 
 @mcp.tool()
