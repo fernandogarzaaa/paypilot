@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Partial refunds now use the original payment's currency (looked up from recent payments, or the new optional `currency` argument) instead of always sending USD, which PayPal rejects for EUR/GBP/... captures.
+- `account_summary` no longer adds amounts in different currencies together: with mixed currencies it reports `currency: "MIXED"` and per-currency totals; totals use exact Decimal arithmetic.
+- Non-numeric or out-of-range integer tool arguments (`days_back`, `limit`, `due_days`) return a tool error the model can recover from instead of crashing the chat request with HTTP 500.
 - Web UI no longer freezes on a network failure or a non-JSON error page: errors are shown in the conversation, the "…" placeholder is always removed, and Send is disabled while a request is in flight (no double submits).
 - `/api/chat` rejects blank messages and messages over 2,000 characters with a 422 before any model call; validation errors now use the same `{"error": ...}` shape as other API errors, so the UI shows them.
 - Accessibility: the message box has a label, the conversation is an ARIA live log, the status line is a live status, visible focus rings, and the log scrolls inside its box instead of growing the page. It also has an empty state.

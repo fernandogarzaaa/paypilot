@@ -145,3 +145,76 @@ def test_invoice_status_reports_due_date(client):
     expected = (datetime.date.today()
                 + datetime.timedelta(days=30)).isoformat()
     assert status["due_date"] == expected
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("payment_search", {"days_back": "thirty"}),
+    ("payment_search", {"days_back": 0}),
+    ("payment_search", {"days_back": 2.5}),
+    ("invoice_list", {"limit": "lots"}),
+    ("invoice_list", {"limit": 10_000}),
+    ("invoice_create", {"recipient_email": "a@b.co", "due_days": "soon",
+                        "items": [{"name": "x", "quantity": 1,
+                                   "unit_price": 1}]}),
+])
+def test_bad_integer_args_raise_tool_error(client, tool, args):
+    # A raw ValueError used to escape the agent loop's PayPilotError
+    # handling and fail the whole chat turn with HTTP 500.
+    with pytest.raises(ToolError):
+        tools.execute_tool(client, tool, args)
+
+
+def test_integer_args_accept_numeric_strings(client):
+    out = tools.execute_tool(client, "payment_search", {"days_back": "7"})
+    assert "payments" in out
+
+
+def test_partial_refund_uses_capture_currency(client, transport):
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "eu@example.com", "currency": "EUR",
+        "items": [{"name": "Work", "quantity": 1, "unit_price": 80}]})
+    tools.execute_tool(client, "invoice_send",
+                       {"invoice_id": created["invoice_id"]})
+    transport.mock_mark_invoice_paid(created["invoice_id"])
+    pay = [p for p in tools.execute_tool(
+        client, "payment_search", {"query": "eu@example.com"})["payments"]]
+    assert pay and pay[0]["currency"] == "EUR"
+    refund = tools.execute_tool(client, "refund_payment", {
+        "capture_id": pay[0]["capture_id"], "amount": "10"})
+    assert refund["currency"] == "EUR"
+    sent = [r for r in transport.requests if r.path.endswith("/refund")][-1]
+    assert sent.json_body["amount"]["currency_code"] == "EUR"
+
+
+def test_explicit_refund_currency_wins(client, transport):
+    pay = tools.execute_tool(client, "payment_search", {})["payments"][0]
+    refund = tools.execute_tool(client, "refund_payment", {
+        "capture_id": pay["capture_id"], "amount": "1", "currency": "usd"})
+    assert refund["currency"] == "USD"
+
+
+def test_account_summary_never_adds_currencies(client, transport):
+    for cur, price in (("EUR", 80), ("USD", 20)):
+        created = tools.execute_tool(client, "invoice_create", {
+            "recipient_email": f"{cur.lower()}@example.com",
+            "currency": cur,
+            "items": [{"name": "Work", "quantity": 1, "unit_price": price}]})
+        tools.execute_tool(client, "invoice_send",
+                           {"invoice_id": created["invoice_id"]})
+    summary = tools.execute_tool(client, "account_summary", {})
+    assert summary["currency"] == "MIXED"
+    assert "outstanding_total" not in summary
+    by = summary["totals_by_currency"]
+    assert by["EUR"]["outstanding_total"] == 80.0
+    assert by["USD"]["outstanding_total"] == 20.0
+
+
+def test_account_summary_is_exact_to_the_cent(client, transport):
+    for _ in range(3):
+        created = tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "c@example.com",
+            "items": [{"name": "W", "quantity": 1, "unit_price": "0.10"}]})
+        tools.execute_tool(client, "invoice_send",
+                           {"invoice_id": created["invoice_id"]})
+    summary = tools.execute_tool(client, "account_summary", {})
+    assert summary["outstanding_total"] == 0.3
