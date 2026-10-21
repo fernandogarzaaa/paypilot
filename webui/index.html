@@ -3,41 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PayPilot — agentic commerce operator for PayPal</title>
+<title>PayPilot - agentic commerce operator for PayPal</title>
 <style>
   :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3;
-         max-width: 760px; margin: 0 auto; padding: 24px; }
-  h1 { font-size: 1.4em; }
-  h1 small { color: #8b949e; font-weight: normal; }
-  #log { border: 1px solid #30363d; border-radius: 8px; padding: 12px;
-         min-height: 300px; max-height: 65vh; overflow-y: auto;
-         margin-bottom: 12px; }
-  #log:empty::before { content: "No messages yet. Ask PayPilot to invoice, find or refund a payment.";
-                       color: #8b949e; }
-  .msg { margin: 8px 0; }
-  .user { color: #79c0ff; }
-  .agent { color: #e6edf3; }
-  .tools { color: #8b949e; font-size: 0.85em; margin: 4px 0 4px 16px;
-           white-space: pre-wrap; font-family: monospace; }
-  .err { color: #f85149; }
-  form { display: flex; gap: 8px; }
-  input { flex: 1; padding: 10px; border-radius: 6px;
-          border: 1px solid #30363d; background: #161b22; color: #e6edf3; }
-  button { padding: 10px 18px; border-radius: 6px; border: 0;
-           background: #1f6feb; color: white; cursor: pointer; }
+         max-width: 1080px; margin: 0 auto; padding: 24px; line-height: 1.5; }
+  .masthead { max-width: 760px; margin-bottom: 16px; }
+  h1 { font-size: 1.6em; margin: 0 0 4px; }
+  h1 small { color: #aeb8c2; font-weight: normal; }
+  .purpose { color: #aeb8c2; margin: 0 0 16px; }
+  #log { border: 1px solid #30363d; border-radius: 12px; padding: 16px;
+         min-height: 320px; max-height: 68vh; overflow-y: auto;
+         margin-bottom: 12px; background: #010409; }
+  #log:empty::before { content: "No operations yet. Try an example below, or ask PayPilot to invoice, find, or refund a payment.";
+                       color: #aeb8c2; white-space: pre-line; }
+  .msg { margin: 10px 0; padding: 10px 12px; border-radius: 10px; }
+  .user { color: #e6edf3; background: #1f6feb; background: rgba(31, 111, 235, 0.28);
+          border: 1px solid #1f6feb; margin-left: auto; max-width: 85%; width: fit-content; }
+  .agent { color: #e6edf3; background: #161b22; border: 1px solid #30363d;
+           margin-right: auto; max-width: 85%; }
+  .thinking { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.55; } }
+  .ledger { background: #0d1117; border: 1px solid #30363d; border-left: 4px solid #3fb950;
+            border-radius: 8px; padding: 10px 12px; margin: 10px 0; max-width: 100%; }
+  .ledger.error { border-left-color: #f85149; }
+  .ledger-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .ledger-name { font-family: monospace; font-weight: 700; }
+  .ledger-status { font-size: 0.8em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ledger-status.ok { color: #3fb950; }
+  .ledger-status.error { color: #f85149; }
+  .ledger-args, .ledger-result { font-size: 0.9em; color: #aeb8c2; margin-top: 4px; overflow-wrap: anywhere; }
+  .ledger-result { color: #e6edf3; }
+  .tools { color: #aeb8c2; font-size: 0.9em; margin: 10px 0; overflow-wrap: anywhere; }
+  .err { color: #ffdcd7; background: rgba(248, 81, 73, 0.16); border: 1px solid #f85149; }
+  .pending { background: rgba(210, 153, 34, 0.12); border: 1px solid #d29922; max-width: 100%; }
+  .pending-warning { color: #e6edf3; font-weight: 700; margin: 8px 0; }
+  .pending button { min-height: 44px; padding: 10px 18px; margin-right: 8px; }
+  .pending .confirm-btn { background: #238636; }
+  .pending .cancel-btn { background: #30363d; }
+  form { display: flex; gap: 8px; max-width: 760px; }
+  input { flex: 1; min-width: 0; min-height: 44px; padding: 10px; border-radius: 6px;
+          border: 1px solid #30363d; background: #161b22; color: #e6edf3; font-size: 1em; }
+  button { min-height: 44px; padding: 10px 18px; border-radius: 6px; border: 0;
+           background: #1f6feb; color: white; cursor: pointer; font-size: 1em; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
   input:focus-visible, button:focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
              clip: rect(0 0 0 0); white-space: nowrap; }
-  #meta { color: #8b949e; font-size: 0.85em; margin-bottom: 12px; }
-  .hint { color: #8b949e; font-size: 0.85em; margin-top: 12px; }
+  #meta { color: #e6edf3; background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+          padding: 10px 12px; font-size: 0.9em; margin-bottom: 12px; max-width: 760px; }
+  #meta.error { color: #ffdcd7; border-color: #f85149; }
+  .banner { border: 2px solid #d29922; border-radius: 10px; padding: 12px 14px;
+            margin-bottom: 12px; color: #e6edf3; background: rgba(210, 153, 34, 0.14); }
+  .banner-label { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.85em; color: #e3b341; }
+  .banner-note { color: #aeb8c2; margin-top: 4px; }
+  .hint { color: #aeb8c2; font-size: 0.9em; margin-top: 12px; max-width: 760px; }
+  .chip { background: #161b22; color: #e6edf3; border: 1px solid #30363d; margin: 4px 4px 0 0; }
   code { background: #161b22; padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 600px) {
+    body { padding: 16px; }
+    h1 { font-size: 1.3em; }
+    form { flex-direction: column; }
+    form button { width: 100%; }
+    #log { max-height: 60vh; padding: 12px; }
+    .user, .agent { max-width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+  }
 </style>
 </head>
 <body>
+<header class="masthead">
 <h1>PayPilot <small>agentic commerce operator for PayPal</small></h1>
+<p class="purpose">Natural language in, PayPal operations out. Invoices, payments, and refunds, shown as a readable ledger.</p>
+<div class="banner" role="note"><div class="banner-label">Simulated backend</div>Demo backend is simulated PayPal, real sandbox invoice lifecycle was verified Oct 8 via the repo smoke script.<div class="banner-note">No real money moves in this demo. Money actions below still ask for your confirmation first.</div></div>
 <div id="meta" role="status">checking backend…</div>
+</header>
 <div id="log" role="log" aria-live="polite" aria-label="Conversation"></div>
 <form id="f">
   <label for="q" class="sr-only">Message to PayPilot</label>
@@ -46,17 +89,30 @@
   <button type="submit" id="send">Send</button>
 </form>
 <div class="hint">
-  Try: <code>Who hasn't paid yet?</code> · <code>Refund the last payment from John</code> ·
-  <code>Give me an account summary</code>
+  Try:
+  <button type="button" class="chip">Who hasn't paid yet?</button>
+  <button type="button" class="chip">Refund the last payment from John</button>
+  <button type="button" class="chip">Give me an account summary</button>
 </div>
 <script>
 const log = document.getElementById('log');
 const meta = document.getElementById('meta');
 fetch('/api/health').then(r => r.json()).then(h => {
   meta.textContent = h.ok
-    ? `backend: ${h.backend} · model: ${h.model}`
+    ? `Backend: ${h.backend} · Model: ${h.model} · Status reported by server, not a live model probe`
     : `error: ${h.error}`;
-}).catch(() => { meta.textContent = 'backend unreachable - is the PayPilot server running?'; });
+  if (!h.ok) meta.classList.add('error');
+}).catch(() => {
+  meta.textContent = 'backend unreachable - is the PayPilot server running?';
+  meta.classList.add('error');
+});
+document.querySelectorAll('.chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const q = document.getElementById('q');
+    q.value = chip.textContent;
+    q.focus();
+  });
+});
 // Parse a response as JSON; a proxy error page or dropped connection becomes
 // a readable {error} instead of an unhandled rejection that freezes the UI.
 async function readJson(r) {
@@ -74,6 +130,39 @@ function add(cls, text) {
   log.scrollTop = log.scrollHeight;
   return d;
 }
+function formatValue(v) {
+  if (v === null || v === undefined) return 'none';
+  if (typeof v === 'object') {
+    const entries = Object.entries(v).map(([k, val]) =>
+      `${k}: ${typeof val === 'object' ? JSON.stringify(val) : val}`);
+    return entries.length ? entries.join(' · ') : 'none';
+  }
+  return String(v);
+}
+function ledgerRow(tc) {
+  const failed = Boolean(tc.result && tc.result.error);
+  const d = document.createElement('div');
+  d.className = 'msg ledger' + (failed ? ' error' : '');
+  const head = document.createElement('div');
+  head.className = 'ledger-head';
+  const name = document.createElement('span');
+  name.className = 'ledger-name';
+  name.textContent = tc.name;
+  const status = document.createElement('span');
+  status.className = 'ledger-status ' + (failed ? 'error' : 'ok');
+  status.textContent = failed ? 'error' : 'ok';
+  head.append(name, status);
+  const args = document.createElement('div');
+  args.className = 'ledger-args';
+  args.textContent = 'Arguments: ' + formatValue(tc.arguments);
+  const result = document.createElement('div');
+  result.className = 'ledger-result';
+  result.textContent = failed
+    ? 'Result: ERROR: ' + tc.result.error
+    : 'Result: ' + formatValue(tc.result);
+  d.append(head, args, result);
+  return d;
+}
 document.getElementById('f').addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = document.getElementById('q');
@@ -83,36 +172,46 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   send.disabled = true;  // no double-submits while the agent is working
   q.value = '';
   add('user', '› ' + text);
-  const thinking = add('agent', '…');
+  const thinking = add('agent thinking', 'Working on it…');
   let data;
   try {
     data = await readJson(await post('/api/chat', {message: text}));
   } catch {
     data = {error: 'network error - could not reach the PayPilot server'};
-  } finally {
-    thinking.remove();
-    send.disabled = false;
-    q.focus();
   }
-  if (data.error) { add('err', 'Error: ' + data.error); return; }
+  send.disabled = false;
+  q.focus();
+  if (data.error) {
+    thinking.className = 'msg err';
+    thinking.textContent = 'Error: ' + data.error;
+    log.scrollTop = log.scrollHeight;
+    return;
+  }
   for (const tc of data.tool_calls || []) {
-    const res = tc.result && tc.result.error
-      ? 'ERROR: ' + tc.result.error
-      : JSON.stringify(tc.result);
-    add('tools', `⚙ ${tc.name}(${JSON.stringify(tc.arguments)}) → ${res}`);
+    log.insertBefore(ledgerRow(tc), thinking);
   }
-  add('agent', data.reply);
+  thinking.className = 'msg agent';
+  thinking.textContent = data.reply;
+  log.scrollTop = log.scrollHeight;
   for (const p of data.pending_actions || []) pendingCard(p);
 });
 // Money-moving tools (refunds, sending invoices) are held by the server
 // until a human clicks Confirm here.
 function pendingCard(p) {
   const d = document.createElement('div');
-  d.className = 'msg tools';
-  d.textContent = `⏸ ${p.name}(${JSON.stringify(p.arguments)}) needs your confirmation `;
+  d.className = 'msg pending';
+  d.textContent = `${p.name}(${JSON.stringify(p.arguments)}) needs your confirmation`;
+  const warn = document.createElement('div');
+  warn.className = 'pending-warning';
+  warn.textContent = 'Simulated backend: no real money moves. Confirm only if this action looks right.';
+  d.appendChild(warn);
   const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'confirm-btn';
   ok.textContent = 'Confirm';
   const no = document.createElement('button');
+  no.type = 'button';
+  no.className = 'cancel-btn';
   no.textContent = 'Cancel';
   const done = async (path, label) => {
     ok.disabled = no.disabled = true;
