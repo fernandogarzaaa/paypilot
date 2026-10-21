@@ -5,69 +5,93 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PayPilot - agentic commerce operator for PayPal</title>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3;
-         max-width: 1080px; margin: 0 auto; padding: 24px; line-height: 1.5; }
-  .masthead { max-width: 760px; margin-bottom: 16px; }
-  h1 { font-size: 1.6em; margin: 0 0 4px; }
-  h1 small { color: #aeb8c2; font-weight: normal; }
-  .purpose { color: #aeb8c2; margin: 0 0 16px; }
-  #log { border: 1px solid #30363d; border-radius: 12px; padding: 16px;
-         min-height: 320px; max-height: 68vh; overflow-y: auto;
-         margin-bottom: 12px; background: #010409; }
-  #log:empty::before { content: "No operations yet. Try an example below, or ask PayPilot to invoice, find, or refund a payment.";
-                       color: #aeb8c2; white-space: pre-line; }
-  .msg { margin: 10px 0; padding: 10px 12px; border-radius: 10px; }
-  .user { color: #e6edf3; background: #1f6feb; background: rgba(31, 111, 235, 0.28);
-          border: 1px solid #1f6feb; margin-left: auto; max-width: 85%; width: fit-content; }
-  .agent { color: #e6edf3; background: #161b22; border: 1px solid #30363d;
-           margin-right: auto; max-width: 85%; }
-  .thinking { animation: pulse 1.2s ease-in-out infinite; }
+  body { font-family: system-ui, sans-serif; background: #f5f7fa; color: #001435;
+         max-width: 960px; margin: 0 auto; padding: 32px 24px; line-height: 1.5; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 28px; margin: 0; color: #003087; letter-spacing: -0.02em; }
+  .purpose { color: #545d68; margin: 4px 0 12px; font-size: 17px; }
+  .notice { background: #fff8e1; border: 1px solid #ecd9a0; padding: 10px 14px;
+            font-size: 14px; margin-bottom: 12px; }
+  .notice strong { color: #001435; }
+  #meta { color: #545d68; font-size: 14px; margin-bottom: 20px; }
+  #meta.error { color: #b00020; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr 1fr; background: #ffffff;
+             border: 1px solid #e5e7eb; margin-bottom: 24px; }
+  .stat { padding: 20px; }
+  .stat + .stat { border-left: 1px solid #e5e7eb; }
+  .stat-label { color: #545d68; font-size: 14px; margin-bottom: 4px; }
+  .stat-value { font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+                font-variant-numeric: tabular-nums; }
+  .stat-note { color: #545d68; font-size: 13px; margin-top: 2px; }
+  .section-head { display: flex; justify-content: space-between; align-items: baseline;
+                  margin-bottom: 8px; }
+  h2 { font-size: 20px; margin: 0; }
+  .filters { display: flex; gap: 8px; }
+  .filter { background: #ffffff; color: #001435; border: 1px solid #e5e7eb;
+            padding: 8px 14px; min-height: 40px; font-size: 14px; cursor: pointer; }
+  .filter[aria-pressed="true"] { background: #003087; color: #ffffff; border-color: #003087; }
+  #log { background: #ffffff; border: 1px solid #e5e7eb;
+         padding: 0; margin-bottom: 20px; }
+  #log:empty::before { content: "No activity yet. Ask PayPilot to check who has not paid, or to send an invoice.";
+                       color: #545d68; display: block; padding: 32px; }
+  .user-line { padding: 16px 20px; color: #545d68; font-size: 14px;
+               border-bottom: 1px solid #e5e7eb; }
+  .user-line strong { color: #001435; }
+  .activity { border-bottom: 1px solid #e5e7eb; }
+  .activity-head { display: grid; grid-template-columns: auto 1fr auto; gap: 16px;
+                   align-items: start; width: 100%; text-align: left; background: #ffffff;
+                   border: 0; padding: 18px 20px; cursor: pointer; color: #001435; }
+  .activity-head:hover { background: #f5f7fa; }
+  .pill { font-size: 13px; font-weight: 700; padding: 4px 10px; white-space: nowrap; }
+  .pill.completed { background: #e6f4ea; color: #0a6b2d; }
+  .pill.error { background: #fdecea; color: #b00020; }
+  .activity-name { font-weight: 700; font-size: 16px; }
+  .activity-sub { color: #545d68; font-size: 14px; }
+  .activity-time { color: #545d68; font-size: 13px; display: block; text-align: right; font-weight: 400; }
+  .amount { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums;
+            text-align: right; }
+  .amount .amt-label { display: block; font-size: 13px; font-weight: 400; color: #545d68; }
+  .detail { display: none; padding: 0 20px 18px 20px; color: #333f4e; font-size: 14px;
+            overflow-wrap: anywhere; }
+  .activity.open .detail { display: block; }
+  .detail p { margin: 6px 0; }
+  .reply { padding: 18px 20px; font-size: 16px; border-bottom: 1px solid #e5e7eb; }
+  .reply.thinking { color: #545d68; animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.55; } }
-  .ledger { background: #0d1117; border: 1px solid #30363d; border-left: 4px solid #3fb950;
-            border-radius: 8px; padding: 10px 12px; margin: 10px 0; max-width: 100%; }
-  .ledger.error { border-left-color: #f85149; }
-  .ledger-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .ledger-name { font-family: monospace; font-weight: 700; }
-  .ledger-status { font-size: 0.8em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-  .ledger-status.ok { color: #3fb950; }
-  .ledger-status.error { color: #f85149; }
-  .ledger-args, .ledger-result { font-size: 0.9em; color: #aeb8c2; margin-top: 4px; overflow-wrap: anywhere; }
-  .ledger-result { color: #e6edf3; }
-  .tools { color: #aeb8c2; font-size: 0.9em; margin: 10px 0; overflow-wrap: anywhere; }
-  .err { color: #ffdcd7; background: rgba(248, 81, 73, 0.16); border: 1px solid #f85149; }
-  .pending { background: rgba(210, 153, 34, 0.12); border: 1px solid #d29922; max-width: 100%; }
-  .pending-warning { color: #e6edf3; font-weight: 700; margin: 8px 0; }
-  .pending button { min-height: 44px; padding: 10px 18px; margin-right: 8px; }
-  .pending .confirm-btn { background: #238636; }
-  .pending .cancel-btn { background: #30363d; }
-  form { display: flex; gap: 8px; max-width: 760px; }
-  input { flex: 1; min-width: 0; min-height: 44px; padding: 10px; border-radius: 6px;
-          border: 1px solid #30363d; background: #161b22; color: #e6edf3; font-size: 1em; }
-  button { min-height: 44px; padding: 10px 18px; border-radius: 6px; border: 0;
-           background: #1f6feb; color: white; cursor: pointer; font-size: 1em; }
+  .err { padding: 18px 20px; color: #b00020; background: #fdecea; border-bottom: 1px solid #e5e7eb; }
+  .pending { background: #fff8e1; border: 2px solid #e6c87a; padding: 18px 20px; margin: 16px; }
+  .pending-title { font-weight: 700; font-size: 16px; }
+  .pending-warning { font-weight: 700; margin: 8px 0 12px; }
+  .pending button { min-height: 44px; padding: 10px 20px; margin-right: 8px; font-size: 15px; cursor: pointer; }
+  .confirm-btn { background: #007a3d; color: #ffffff; border: 0; }
+  .cancel-btn { background: #ffffff; color: #001435; border: 1px solid #e5e7eb; }
+  form { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; min-height: 48px; padding: 12px 14px; font-size: 16px;
+          border: 1px solid #9aa0a6; background: #ffffff; color: #001435; }
+  button { cursor: pointer; }
+  #send { min-height: 48px; padding: 12px 24px; font-size: 16px; font-weight: 700;
+          background: #0070e0; color: #ffffff; border: 0; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
-  input:focus-visible, button:focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }
+  input:focus-visible, button:focus-visible { outline: 3px solid #0070e0; outline-offset: 2px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
              clip: rect(0 0 0 0); white-space: nowrap; }
-  #meta { color: #e6edf3; background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-          padding: 10px 12px; font-size: 0.9em; margin-bottom: 12px; max-width: 760px; }
-  #meta.error { color: #ffdcd7; border-color: #f85149; }
-  .banner { border: 2px solid #d29922; border-radius: 10px; padding: 12px 14px;
-            margin-bottom: 12px; color: #e6edf3; background: rgba(210, 153, 34, 0.14); }
-  .banner-label { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.85em; color: #e3b341; }
-  .banner-note { color: #aeb8c2; margin-top: 4px; }
-  .hint { color: #aeb8c2; font-size: 0.9em; margin-top: 12px; max-width: 760px; }
-  .chip { background: #161b22; color: #e6edf3; border: 1px solid #30363d; margin: 4px 4px 0 0; }
-  code { background: #161b22; padding: 1px 5px; border-radius: 4px; }
+  .hint { color: #545d68; font-size: 14px; margin-top: 12px; }
+  .chip { background: #ffffff; color: #0070e0; border: 1px solid #0070e0;
+          padding: 9px 14px; margin: 6px 6px 0 0; min-height: 40px; font-size: 14px; }
   @media (max-width: 600px) {
-    body { padding: 16px; }
-    h1 { font-size: 1.3em; }
+    body { padding: 20px 16px; }
+    .summary { grid-template-columns: 1fr 1fr; }
+    .stat { padding: 16px; }
+    .stat-value { font-size: 22px; }
+    .stat:nth-child(3) { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #e5e7eb; }
+    .activity-head { grid-template-columns: auto 1fr; }
+    .amount { grid-column: 2; text-align: left; }
+    .activity-time { display: none; }
     form { flex-direction: column; }
-    form button { width: 100%; }
-    #log { max-height: 60vh; padding: 12px; }
-    .user, .agent { max-width: 100%; }
+    #send { width: 100%; }
+    .section-head { flex-direction: column; gap: 10px; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; }
@@ -75,17 +99,35 @@
 </style>
 </head>
 <body>
-<header class="masthead">
-<h1>PayPilot <small>agentic commerce operator for PayPal</small></h1>
-<p class="purpose">Natural language in, PayPal operations out. Invoices, payments, and refunds, shown as a readable ledger.</p>
-<div class="banner" role="note"><div class="banner-label">Simulated backend</div>Demo backend is simulated PayPal, real sandbox invoice lifecycle was verified Oct 8 via the repo smoke script.<div class="banner-note">No real money moves in this demo. Money actions below still ask for your confirmation first.</div></div>
-<div id="meta" role="status">checking backend…</div>
+<header>
+<h1>PayPilot</h1>
+<p class="purpose">Ask in plain language. PayPilot runs PayPal invoices, payments, and refunds, and shows each one as activity.</p>
+<p class="notice" role="note"><strong>Simulated backend.</strong> Demo backend is simulated PayPal, real sandbox invoice lifecycle was verified Oct 8 via the repo smoke script. No real money moves in this demo.</p>
+<p id="meta" role="status">checking backend…</p>
 </header>
-<div id="log" role="log" aria-live="polite" aria-label="Conversation"></div>
+
+<section aria-label="Account summary">
+<div class="summary">
+  <div class="stat"><div class="stat-label">Received, last 30 days</div><div class="stat-value" id="stat-received">—</div><div class="stat-note" id="stat-received-note">No summary yet</div></div>
+  <div class="stat"><div class="stat-label">Outstanding</div><div class="stat-value" id="stat-outstanding">—</div><div class="stat-note">Unpaid invoices</div></div>
+  <div class="stat"><div class="stat-label">Unpaid invoices</div><div class="stat-value" id="stat-unpaid">—</div><div class="stat-note" id="stat-updated">Ask for an account summary</div></div>
+</div>
+</section>
+
+<div class="section-head">
+<h2>Activity</h2>
+<div class="filters" role="group" aria-label="Filter activity">
+  <button type="button" class="filter" data-filter="all" aria-pressed="true">All</button>
+  <button type="button" class="filter" data-filter="completed" aria-pressed="false">Completed</button>
+  <button type="button" class="filter" data-filter="error" aria-pressed="false">Errors</button>
+</div>
+</div>
+<div id="log" role="log" aria-live="polite" aria-label="Activity"></div>
+
 <form id="f">
   <label for="q" class="sr-only">Message to PayPilot</label>
   <input id="q" autocomplete="off" maxlength="2000"
-         placeholder='Try: Invoice Acme Corp $1,250 due in 30 days'>
+         placeholder="Ask PayPilot: who has not paid yet?">
   <button type="submit" id="send">Send</button>
 </form>
 <div class="hint">
@@ -94,9 +136,11 @@
   <button type="button" class="chip">Refund the last payment from John</button>
   <button type="button" class="chip">Give me an account summary</button>
 </div>
+
 <script>
 const log = document.getElementById('log');
 const meta = document.getElementById('meta');
+let activeFilter = 'all';
 fetch('/api/health').then(r => r.json()).then(h => {
   meta.textContent = h.ok
     ? `Backend: ${h.backend} · Model: ${h.model} · Status reported by server, not a live model probe`
@@ -113,8 +157,18 @@ document.querySelectorAll('.chip').forEach((chip) => {
     q.focus();
   });
 });
-// Parse a response as JSON; a proxy error page or dropped connection becomes
-// a readable {error} instead of an unhandled rejection that freezes the UI.
+document.querySelectorAll('.filter').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    activeFilter = btn.dataset.filter;
+    document.querySelectorAll('.filter').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    applyFilter();
+  });
+});
+function applyFilter() {
+  document.querySelectorAll('.activity').forEach((row) => {
+    row.style.display = (activeFilter === 'all' || row.dataset.status === activeFilter) ? '' : 'none';
+  });
+}
 async function readJson(r) {
   let body;
   try { body = await r.json(); }
@@ -122,46 +176,96 @@ async function readJson(r) {
   if (!r.ok && !body.error) body.error = `server returned HTTP ${r.status}`;
   return body;
 }
-function add(cls, text) {
-  const d = document.createElement('div');
-  d.className = 'msg ' + cls;
-  d.textContent = text;
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
-  return d;
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return (currency || 'USD') + ' ' + n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 function formatValue(v) {
   if (v === null || v === undefined) return 'none';
   if (typeof v === 'object') {
     const entries = Object.entries(v).map(([k, val]) =>
-      `${k}: ${typeof val === 'object' ? JSON.stringify(val) : val}`);
+      `${k.replace(/_/g, ' ')}: ${typeof val === 'object' ? JSON.stringify(val) : val}`);
     return entries.length ? entries.join(' · ') : 'none';
   }
   return String(v);
 }
-function ledgerRow(tc) {
+const TOOL_NAMES = {
+  invoice_create: 'Create invoice', invoice_send: 'Send invoice',
+  invoice_remind: 'Remind invoice', invoice_list: 'Invoice list',
+  invoice_status: 'Invoice status', payment_search: 'Payment search',
+  refund_payment: 'Refund payment', account_summary: 'Account summary'
+};
+function plainToolName(name) { return TOOL_NAMES[name] || String(name).replace(/_/g, ' '); }
+function subjectOf(args) {
+  if (!args || typeof args !== 'object') return '';
+  return args.to || args.customer || args.payer || args.name || args.email || args.recipient || args.invoice_id || args.payment_id || '';
+}
+function amountOf(tc) {
+  const r = tc.result || {};
+  if (tc.name === 'account_summary' && r.payments_total_30d !== undefined) return formatMoney(r.payments_total_30d, r.currency);
+  const v = r.amount !== undefined ? r.amount : (r.total !== undefined ? r.total : null);
+  if (v === null) return null;
+  return formatMoney(v, r.currency);
+}
+function activityRow(tc) {
   const failed = Boolean(tc.result && tc.result.error);
-  const d = document.createElement('div');
-  d.className = 'msg ledger' + (failed ? ' error' : '');
-  const head = document.createElement('div');
-  head.className = 'ledger-head';
+  const status = failed ? 'error' : 'completed';
+  const row = document.createElement('article');
+  row.className = 'activity';
+  row.dataset.status = status;
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'activity-head';
+  head.setAttribute('aria-expanded', 'false');
+  const pill = document.createElement('span');
+  pill.className = 'pill ' + status;
+  pill.textContent = failed ? 'Error' : 'Completed';
+  const main = document.createElement('span');
   const name = document.createElement('span');
-  name.className = 'ledger-name';
-  name.textContent = tc.name;
-  const status = document.createElement('span');
-  status.className = 'ledger-status ' + (failed ? 'error' : 'ok');
-  status.textContent = failed ? 'error' : 'ok';
-  head.append(name, status);
-  const args = document.createElement('div');
-  args.className = 'ledger-args';
-  args.textContent = 'Arguments: ' + formatValue(tc.arguments);
-  const result = document.createElement('div');
-  result.className = 'ledger-result';
-  result.textContent = failed
-    ? 'Result: ERROR: ' + tc.result.error
-    : 'Result: ' + formatValue(tc.result);
-  d.append(head, args, result);
-  return d;
+  name.className = 'activity-name';
+  name.textContent = plainToolName(tc.name);
+  const sub = document.createElement('span');
+  sub.className = 'activity-sub';
+  const subj = subjectOf(tc.arguments);
+  sub.textContent = subj ? ' · ' + subj : '';
+  main.append(name, sub);
+  const right = document.createElement('span');
+  right.className = 'amount';
+  const amt = amountOf(tc);
+  if (amt) right.textContent = amt;
+  const time = document.createElement('span');
+  time.className = 'activity-time';
+  time.textContent = new Date().toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+  right.appendChild(time);
+  const detail = document.createElement('div');
+  detail.className = 'detail';
+  const a = document.createElement('p');
+  a.textContent = 'Arguments: ' + formatValue(tc.arguments);
+  const b = document.createElement('p');
+  b.textContent = failed ? 'Result: Error: ' + tc.result.error : 'Result: ' + formatValue(tc.result);
+  detail.append(a, b);
+  head.append(pill, main, right);
+  row.append(head, detail);
+  head.addEventListener('click', () => {
+    const open = row.classList.toggle('open');
+    head.setAttribute('aria-expanded', String(open));
+  });
+  return row;
+}
+function updateSummary(tc) {
+  if (tc.name !== 'account_summary' || !tc.result || tc.result.error) return;
+  const r = tc.result;
+  const received = formatMoney(r.payments_total_30d, r.currency);
+  const outstanding = formatMoney(r.outstanding_total, r.currency);
+  if (received) {
+    document.getElementById('stat-received').textContent = received;
+    document.getElementById('stat-received-note').textContent = (r.payments_received_30d ?? '') + ' payments in the last 30 days';
+  }
+  if (outstanding) document.getElementById('stat-outstanding').textContent = outstanding;
+  if (r.outstanding_invoices !== undefined) document.getElementById('stat-unpaid').textContent = String(r.outstanding_invoices);
+  document.getElementById('stat-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
 }
 document.getElementById('f').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -169,10 +273,19 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   const text = q.value.trim();
   if (!text) return;
   const send = document.getElementById('send');
-  send.disabled = true;  // no double-submits while the agent is working
+  send.disabled = true;
   q.value = '';
-  add('user', '› ' + text);
-  const thinking = add('agent thinking', 'Working on it…');
+  const userLine = document.createElement('div');
+  userLine.className = 'user-line';
+  userLine.innerHTML = '';
+  const strong = document.createElement('strong');
+  strong.textContent = 'You asked: ';
+  userLine.append(strong, document.createTextNode(text));
+  log.appendChild(userLine);
+  const thinking = document.createElement('p');
+  thinking.className = 'reply thinking';
+  thinking.textContent = 'Working on it…';
+  log.appendChild(thinking);
   let data;
   try {
     data = await readJson(await post('/api/chat', {message: text}));
@@ -182,29 +295,33 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   send.disabled = false;
   q.focus();
   if (data.error) {
-    thinking.className = 'msg err';
+    thinking.className = 'err';
     thinking.textContent = 'Error: ' + data.error;
     log.scrollTop = log.scrollHeight;
     return;
   }
   for (const tc of data.tool_calls || []) {
-    log.insertBefore(ledgerRow(tc), thinking);
+    log.insertBefore(activityRow(tc), thinking);
+    updateSummary(tc);
   }
-  thinking.className = 'msg agent';
+  applyFilter();
+  thinking.className = 'reply';
   thinking.textContent = data.reply;
   log.scrollTop = log.scrollHeight;
   for (const p of data.pending_actions || []) pendingCard(p);
 });
-// Money-moving tools (refunds, sending invoices) are held by the server
-// until a human clicks Confirm here.
 function pendingCard(p) {
   const d = document.createElement('div');
-  d.className = 'msg pending';
-  d.textContent = `${p.name}(${JSON.stringify(p.arguments)}) needs your confirmation`;
+  d.className = 'pending';
+  const title = document.createElement('div');
+  title.className = 'pending-title';
+  title.textContent = plainToolName(p.name) + ' needs your confirmation';
   const warn = document.createElement('div');
   warn.className = 'pending-warning';
   warn.textContent = 'Simulated backend: no real money moves. Confirm only if this action looks right.';
-  d.appendChild(warn);
+  const args = document.createElement('p');
+  args.textContent = formatValue(p.arguments);
+  d.append(title, warn, args);
   const ok = document.createElement('button');
   ok.type = 'button';
   ok.className = 'confirm-btn';
@@ -218,27 +335,27 @@ function pendingCard(p) {
     let res;
     try { res = await readJson(await post(path, {action_id: p.action_id})); }
     catch { res = {error: 'network error - action state unknown, check PayPal before retrying'}; }
-    add(res.error ? 'err' : 'tools',
-        res.error ? 'Error: ' + res.error : `${label} ${p.name} → ${JSON.stringify(res.result || res)}`);
+    const note = document.createElement('p');
+    note.textContent = res.error ? 'Error: ' + res.error : label + ' ' + plainToolName(p.name);
+    d.appendChild(note);
   };
-  ok.onclick = () => done('/api/confirm', '✔ executed');
-  no.onclick = () => done('/api/cancel', '✖ cancelled');
-  d.append(ok, ' ', no);
+  ok.onclick = () => done('/api/confirm', 'Confirmed:');
+  no.onclick = () => done('/api/cancel', 'Cancelled:');
+  d.append(ok, no);
   log.appendChild(d);
   log.scrollTop = log.scrollHeight;
 }
-// Optional API key (PAYPILOT_API_KEY on the server), kept in this browser only.
 async function post(path, body) {
-  const send = () => fetch(path, {
+  const sendReq = () => fetch(path, {
     method: 'POST',
     headers: Object.assign({'Content-Type': 'application/json'},
       localStorage.paypilotKey ? {'Authorization': 'Bearer ' + localStorage.paypilotKey} : {}),
     body: JSON.stringify(body),
   });
-  let r = await send();
+  let r = await sendReq();
   if (r.status === 401) {
     const k = prompt('This PayPilot server needs an API key:');
-    if (k) { localStorage.paypilotKey = k.trim(); r = await send(); }
+    if (k) { localStorage.paypilotKey = k.trim(); r = await sendReq(); }
   }
   return r;
 }
