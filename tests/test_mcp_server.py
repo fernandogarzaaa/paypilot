@@ -80,3 +80,58 @@ def test_payment_search_and_summary_over_mcp(mcp_server_url):
             return True
         return await _with_session(mcp_server_url, fn)
     assert asyncio.run(go()) is True
+
+
+def test_invoice_create_bad_items_json_returns_error_not_crash(mcp_server_url):
+    """Malformed items JSON used to raise a raw JSONDecodeError out of the
+    MCP tool handler. Over real Streamable HTTP it must come back as the
+    documented {"error": ...} envelope, and the server must stay up."""
+    async def go():
+        async def fn(session, _init):
+            bad = await session.call_tool("invoice_create", {
+                "recipient_email": "a@b.co", "items": "{not json"})
+            body = json.loads(bad.content[0].text)
+            assert "error" in body, body
+            obj = await session.call_tool("invoice_create", {
+                "recipient_email": "a@b.co",
+                "items": json.dumps({"name": "x", "unit_price": 5})})
+            obody = json.loads(obj.content[0].text)
+            assert "error" in obody, obody
+            # Server still answers after both bad calls.
+            found = await session.call_tool("payment_search",
+                                            {"query": "john"})
+            assert json.loads(found.content[0].text)["count"] == 1
+            return True
+        return await _with_session(mcp_server_url, fn)
+    assert asyncio.run(go()) is True
+
+
+# -- in-process tool calls -----------------------------------------------
+# The tests above drive the server over real HTTP (subprocess), which
+# mutation coverage cannot observe. These call the same tool functions
+# directly in-process, so the JSON-error branch and the due_days default
+# are actually executed by the suite.
+def test_invoice_create_bad_items_json_direct():
+    from paypilot import mcp_server
+
+    body = json.loads(mcp_server.invoice_create("a@b.co", "{not json"))
+    assert "error" in body and "JSON" in body["error"]
+    body = json.loads(mcp_server.invoice_create(
+        "a@b.co", json.dumps({"name": "x", "unit_price": 5})))
+    assert "error" in body
+
+
+def test_invoice_create_default_due_days_direct():
+    import datetime
+
+    from paypilot import mcp_server
+
+    created = json.loads(mcp_server.invoice_create(
+        "d@example.com",
+        json.dumps([{"name": "W", "quantity": 1, "unit_price": 10}])))
+    assert created["invoice_id"].startswith("INV2-")
+    status = json.loads(mcp_server.invoice_status(
+        created["invoice_id"]))
+    expected = (datetime.date.today()
+                + datetime.timedelta(days=30)).isoformat()
+    assert status["due_date"] == expected
