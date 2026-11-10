@@ -58,9 +58,14 @@ def invoice_create(recipient_email: str, items: str,
     """Create a DRAFT PayPal invoice. items is a JSON array like
     [{"name": "Design work", "quantity": 2, "unit_price": 150}].
     Returns the invoice id; call invoice_send to send it."""
+    try:
+        parsed_items = json.loads(items)
+    except json.JSONDecodeError as e:
+        return json.dumps({"error": f"invoice_create: 'items' must be a "
+                                    f"JSON array, got invalid JSON: {e}"})
     return _run("invoice_create", {"recipient_email": recipient_email,
                                    "recipient_name": recipient_name,
-                                   "items": json.loads(items),
+                                   "items": parsed_items,
                                    "currency": currency,
                                    "due_days": due_days, "note": note})
 

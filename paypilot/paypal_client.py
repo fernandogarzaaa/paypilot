@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import math
 import os
 import time
 import urllib.parse
@@ -43,12 +44,22 @@ def _money(value: Any, what: str) -> float:
     float() raising a raw ValueError would bypass the MCP server's and
     web demo's PayPilotError error envelopes, surfacing as an unstructured
     internal error instead of the documented {"error": ...} reply.
+    Booleans and non-finite values (nan/inf) are rejected too: float(True)
+    is 1.0 and float("nan") passes a negativity check, so without this a
+    model-supplied "nan" refund was accepted as COMPLETED with amount
+    "nan" by the mock (and sent on to PayPal as "nan" by the real client).
     """
+    if isinstance(value, bool):
+        raise ConfigurationError(
+            f"{what} must be a numeric amount, got {value!r}.")
     try:
         amount = float(value)
     except (TypeError, ValueError):
         raise ConfigurationError(
             f"{what} must be a numeric amount, got {value!r}.")
+    if not math.isfinite(amount):
+        raise ConfigurationError(
+            f"{what} must be a finite amount, got {value!r}.")
     if amount < 0:
         raise ConfigurationError(
             f"{what} must not be negative, got {value!r}.")
@@ -149,17 +160,26 @@ class PayPalClient:
                 f"invoice_create needs a valid recipient email, got {to_email!r}.")
         if not items:
             raise ConfigurationError("invoice_create needs at least one item.")
+        if not isinstance(items, list) or not all(
+                isinstance(it, dict) for it in items):
+            raise ConfigurationError(
+                "invoice_create needs items as a list of objects, "
+                f"got {items!r}.")
         given, _, surname = to_name.partition(" ")
         payload_items = []
         for it in items:
             qty = it.get("quantity", 1)
+            if isinstance(qty, bool):
+                raise ConfigurationError(
+                    f"item {it.get('name', '?')!r} needs a numeric "
+                    f"quantity, got {qty!r}.")
             try:
                 qty_f = float(qty)
             except (TypeError, ValueError):
                 raise ConfigurationError(
                     f"item {it.get('name', '?')!r} needs a numeric "
                     f"quantity, got {qty!r}.")
-            if qty_f <= 0:
+            if not math.isfinite(qty_f) or qty_f <= 0:
                 raise ConfigurationError(
                     f"item {it.get('name', '?')!r} needs a positive "
                     f"quantity, got {qty!r}.")
@@ -300,8 +320,13 @@ class PayPalClient:
         """Refund a capture in full (amount omitted) or partially."""
         payload: dict[str, Any] = {}
         if amount is not None:
+            value = _money(amount, "amount")
+            if value == 0:
+                raise ConfigurationError(
+                    "refund amount must be greater than zero, "
+                    f"got {amount!r}.")
             payload["amount"] = {"currency_code": currency,
-                                 "value": f"{_money(amount, 'amount'):.2f}"}
+                                 "value": f"{value:.2f}"}
         if note:
             payload["note_to_payer"] = note
         body = self._call(
