@@ -75,3 +75,25 @@ def test_index_has_accessible_input_and_live_log(web_client):
     html = web_client.get("/").text
     assert '<label for="q"' in html
     assert 'role="log"' in html
+
+
+def test_chat_survives_malformed_tool_arguments(web_client, monkeypatch):
+    """A model returning invoice_create with items as an object (not an
+    array) used to raise a raw AttributeError out of the agent loop and
+    turn the whole chat turn into an HTTP 500. It must now come back as a
+    200 with the tool error reported to the model and the user."""
+    from paypilot.agent import ToolCall
+
+    scripted = ScriptedModel([
+        ModelResponse(tool_calls=[ToolCall(
+            id="bad1", name="invoice_create",
+            arguments={"recipient_email": "a@b.co",
+                       "items": {"name": "x", "unit_price": 5}})]),
+        ModelResponse(content="That invoice request was invalid."),
+    ])
+    monkeypatch.setattr(agent_module, "build_model", lambda: scripted)
+    r = web_client.post("/api/chat", json={"message": "invoice someone"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reply"] == "That invoice request was invalid."
+    assert "error" in body["tool_calls"][0]["result"]

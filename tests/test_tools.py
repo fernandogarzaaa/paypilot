@@ -218,3 +218,200 @@ def test_account_summary_is_exact_to_the_cent(client, transport):
                            {"invoice_id": created["invoice_id"]})
     summary = tools.execute_tool(client, "account_summary", {})
     assert summary["outstanding_total"] == 0.3
+
+
+# -- hardening: model-supplied junk must fail as PayPilotError, never as a
+# raw AttributeError/ValueError escaping the {"error": ...} envelope ------
+def test_invoice_create_rejects_non_list_items(client):
+    """items as a dict or string used to raise raw AttributeError, which the
+    agent loop and MCP server do not catch (HTTP 500 for the whole turn)."""
+    from paypilot.errors import PayPilotError
+
+    for bad in ({"name": "x", "unit_price": 5}, "Design work", 42, [123],
+                [{"name": "x", "unit_price": 5}, "not-a-dict"]):
+        with pytest.raises(PayPilotError):
+            tools.execute_tool(client, "invoice_create", {
+                "recipient_email": "a@b.co", "items": bad})
+
+
+@pytest.mark.parametrize("qty", ["nan", "inf", "-inf", True, 0, -2, "many"])
+def test_invoice_create_rejects_bad_quantity(client, qty):
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "a@b.co",
+            "items": [{"name": "x", "quantity": qty, "unit_price": 5}]})
+
+
+@pytest.mark.parametrize("price", ["nan", "inf", "-inf", True, "not-a-number"])
+def test_invoice_create_rejects_bad_unit_price(client, price):
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "a@b.co",
+            "items": [{"name": "x", "quantity": 1, "unit_price": price}]})
+
+
+@pytest.mark.parametrize("amount", ["nan", "inf", "-inf", "NaN", "Infinity"])
+def test_refund_rejects_non_finite_amount(client, amount):
+    """A 'nan' refund used to return COMPLETED with amount 'nan'."""
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "refund_payment", {
+            "capture_id": "CAP-9RU12345AB", "amount": amount})
+
+
+def test_invoice_create_requires_unit_price(client):
+    """The missing-unit_price raise was never triggered by any test."""
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "invoice_create", {
+            "recipient_email": "a@b.co",
+            "items": [{"name": "x", "quantity": 1}]})
+
+
+def test_invoice_create_default_due_days_is_net_30(client, transport):
+    """Omitting due_days must mean NET_30 (today + 30), not 31."""
+    import datetime
+
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "d@example.com",
+        "items": [{"name": "W", "quantity": 1, "unit_price": 10}]})
+    status = tools.execute_tool(client, "invoice_status",
+                                {"invoice_id": created["invoice_id"]})
+    expected = (datetime.date.today()
+                + datetime.timedelta(days=30)).isoformat()
+    assert status["due_date"] == expected
+    sent = [r for r in transport.requests
+            if r.path == "/v2/invoicing/invoices"][-1]
+    assert sent.json_body["detail"]["payment_term"] == {"term_type": "NET_30"}
+
+
+def test_invoice_create_default_quantity_is_one(client, transport):
+    """Omitting quantity must mean 1, not 2."""
+    tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "q@example.com",
+        "items": [{"name": "W", "unit_price": 10}]})
+    sent = [r for r in transport.requests
+            if r.path == "/v2/invoicing/invoices"][-1]
+    assert sent.json_body["items"][0]["quantity"] == "1"
+
+
+def test_invoice_create_nonstandard_due_days_uses_explicit_date(client):
+    """due_days outside the NET_* table becomes an explicit due date."""
+    import datetime
+
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "d7@example.com",
+        "items": [{"name": "W", "quantity": 1, "unit_price": 10}],
+        "due_days": 7})
+    status = tools.execute_tool(client, "invoice_status",
+                                {"invoice_id": created["invoice_id"]})
+    expected = (datetime.date.today()
+                + datetime.timedelta(days=7)).isoformat()
+    assert status["due_date"] == expected
+
+
+def test_invoice_create_single_word_name_uses_full_name(client, transport):
+    """A recipient with no surname keeps the whole name as given_name."""
+    tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "m@example.com", "recipient_name": "Madonna",
+        "items": [{"name": "W", "quantity": 1, "unit_price": 10}]})
+    sent = [r for r in transport.requests
+            if r.path == "/v2/invoicing/invoices"][-1]
+    name = sent.json_body["primary_recipients"][0]["billing_info"]["name"]
+    assert name["given_name"] == "Madonna"
+    assert name["surname"] == ""
+
+
+def test_invoice_create_follows_href_only_response():
+    """PayPal may answer 201 with only a self link; the client follows it
+    to fetch the created invoice instead of returning an empty id."""
+    from paypilot.paypal_client import PayPalClient
+    from paypilot.transport import MockPayPalTransport, Response
+
+    class HrefOnlyTransport(MockPayPalTransport):
+        def request(self, req):
+            resp = super().request(req)
+            if req.method == "POST" \
+                    and req.path == "/v2/invoicing/invoices":
+                inv_id = resp.body["id"]
+                return Response(201, {
+                    "href": f"/v2/invoicing/invoices/{inv_id}"})
+            return resp
+
+    transport = HrefOnlyTransport()
+    client = PayPalClient("test-id", "test-secret", mode="sandbox",
+                          transport=transport)
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "h@example.com",
+        "items": [{"name": "W", "quantity": 1, "unit_price": 10}]})
+    assert created["invoice_id"].startswith("INV2-")
+    assert created["status"] == "DRAFT"
+
+
+@pytest.mark.parametrize("amount", ["0", "0.00", "-0.00"])
+def test_refund_rejects_zero_amount(client, amount):
+    """A $0 refund is meaningless and PayPal rejects it; it must fail
+    here, not return COMPLETED with amount '0.00'."""
+    from paypilot.errors import PayPilotError
+
+    with pytest.raises(PayPilotError):
+        tools.execute_tool(client, "refund_payment", {
+            "capture_id": "CAP-9RU12345AB", "amount": amount})
+
+
+def test_invoice_create_zero_unit_price_is_allowed(client):
+    """A $0 line item is legitimate (free item), so _money must accept 0
+    for unit_price even though a $0 refund is rejected."""
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "free@example.com",
+        "items": [{"name": "Freebie", "quantity": 1, "unit_price": 0}]})
+    assert created["invoice_id"].startswith("INV2-")
+    assert created["status"] == "DRAFT"
+
+
+def test_client_create_invoice_default_due_days_direct(client):
+    """Calling the client without due_days must mean NET_30: the tools
+    layer always passes due_days explicitly, so only a direct call
+    exercises the client's own default."""
+    created = client.create_invoice(
+        "direct@example.com", "Direct", [{"name": "W", "unit_price": 10}])
+    status = client.get_invoice(created["invoice_id"])
+    import datetime
+
+    expected = (datetime.date.today()
+                + datetime.timedelta(days=30)).isoformat()
+    assert status["due_date"] == expected
+
+
+def test_invoice_create_ignores_href_when_id_present():
+    """The self-link is only followed when the create response has no id.
+    When both are present, the id wins and no extra GET is issued."""
+    from paypilot.paypal_client import PayPalClient
+    from paypilot.transport import MockPayPalTransport, Response
+
+    class IdAndHrefTransport(MockPayPalTransport):
+        def request(self, req):
+            resp = super().request(req)
+            if req.method == "POST" \
+                    and req.path == "/v2/invoicing/invoices":
+                inv_id = resp.body["id"]
+                return Response(201, {
+                    "id": inv_id, "status": "DRAFT",
+                    "href": f"/v2/invoicing/invoices/{inv_id}"})
+            return resp
+
+    transport = IdAndHrefTransport()
+    client = PayPalClient("test-id", "test-secret", mode="sandbox",
+                          transport=transport)
+    created = tools.execute_tool(client, "invoice_create", {
+        "recipient_email": "ih@example.com",
+        "items": [{"name": "W", "quantity": 1, "unit_price": 10}]})
+    assert created["invoice_id"].startswith("INV2-")
+    gets = [r for r in transport.requests if r.method == "GET"]
+    assert gets == []
